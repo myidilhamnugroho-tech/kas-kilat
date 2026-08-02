@@ -301,7 +301,7 @@
   // Webhook n8n Anda sebelum meng-upload file ini ke GitHub Pages.
   // Contoh: "https://n8n-anda.domain.com/webhook/catat-keuangan"
   // ============================================================
-  const N8N_WEBHOOK_URL = "https://GANTI-DENGAN-DOMAIN-N8N-ANDA/webhook/catat-keuangan";
+  const N8N_WEBHOOK_URL = "https://autopagi.app.n8n.cloud/webhook-test/catat-keuangan";
 
   // ------------------------------------------------------------
   // Referensi elemen
@@ -493,7 +493,7 @@
       return;
     }
 
-    if (N8N_WEBHOOK_URL.includes('https://autopagi.app.n8n.cloud/webhook/catat-keuangan')) {
+    if (N8N_WEBHOOK_URL.includes('GANTI-DENGAN-DOMAIN-N8N-ANDA')) {
       showAlert('error', 'URL Webhook n8n belum diatur. Edit konstanta N8N_WEBHOOK_URL di file index.html.');
       return;
     }
