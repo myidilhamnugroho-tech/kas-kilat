@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kas Kilat — Catat Keuangan Secepat Kilat</title>
+
+<!-- Font: Space Grotesk untuk judul/angka, Inter untuk body -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+
+<!-- Tailwind CSS via CDN (Play CDN) -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: {
+          display: ['"Space Grotesk"', 'sans-serif'],
+          sans: ['"Inter"', 'sans-serif'],
+        },
+        colors: {
+          ink: '#14231D',
+          paper: '#F3F5F1',
+          muted: '#6B7A72',
+          hairline: '#E1E6E1',
+          accent: {
+            DEFAULT: '#10794F',
+            dark: '#0B5C3C',
+            soft: '#E4F3EC',
+          },
+          warn: {
+            DEFAULT: '#B3261E',
+            soft: '#FBEAEA',
+            border: '#F2C3C0',
+          }
+        }
+      }
+    }
+  }
+</script>
+
+<style>
+  :root {
+    --paper: #F3F5F1;
+    --card: #FFFFFF;
+  }
+
+  html, body {
+    background: var(--paper);
+  }
+
+  /* ============================================================
+     EFEK "STRUK KERTAS" — signature visual: tepi kartu bergerigi
+     seperti sobekan kertas kasir, menyatu dengan tema aplikasi
+     ============================================================ */
+  .receipt-card {
+    position: relative;
+    background: var(--card);
+  }
+  .receipt-card::before,
+  .receipt-card::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 14px;
+    background-image:
+      linear-gradient(135deg, var(--paper) 50%, transparent 50%),
+      linear-gradient(45deg, var(--paper) 50%, transparent 50%);
+    background-size: 16px 14px;
+    background-position: 0 0, 8px 0;
+    background-repeat: repeat-x;
+    pointer-events: none;
+  }
+  .receipt-card::before { top: -7px; }
+  .receipt-card::after { bottom: -7px; transform: scaleY(-1); }
+
+  .dashed-divider {
+    border-top: 1px dashed #C9D2CB;
+  }
+
+  /* Tombol mic: animasi denyut saat sedang mendengarkan */
+  @keyframes micPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(16,121,79,0.35); }
+    50% { box-shadow: 0 0 0 10px rgba(16,121,79,0); }
+  }
+  .mic-active {
+    animation: micPulse 1.4s ease-out infinite;
+    background-color: #0B5C3C !important;
+    color: #fff !important;
+  }
+
+  /* Spinner loading di tombol submit */
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255,255,255,0.45);
+    border-top-color: #fff;
+    border-radius: 9999px;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Alert / toast banner */
+  .alert-box {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: all 0.25s ease;
+    border-radius: 10px;
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
+  .alert-box.show {
+    max-height: 240px;
+    opacity: 1;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+  }
+  .alert-success { background: #E4F3EC; color: #0B5C3C; border: 1px solid #B7DFCB; }
+  .alert-error { background: #FBEAEA; color: #B3261E; border: 1px solid #F2C3C0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mic-active, .spinner { animation: none; }
+  }
+</style>
+</head>
+
+<body class="min-h-screen font-sans text-ink antialiased">
+
+  <div class="max-w-md mx-auto px-4 py-10 sm:py-14">
+
+    <!-- ============ HEADER ============ -->
+    <header class="mb-8 text-center">
+      <div class="inline-flex items-center justify-center w-11 h-11 rounded-xl bg-accent text-white font-display font-bold text-lg mb-3">
+        Rp
+      </div>
+      <h1 class="font-display font-bold text-2xl tracking-tight">Kas Kilat</h1>
+      <p class="text-muted text-sm mt-1">Catat belanja secepat kilat — ketik, ucapkan, atau foto strukmu.</p>
+    </header>
+
+    <!-- ============ ALERT / TOAST ============ -->
+    <div id="alertBox" class="alert-box" role="alert" aria-live="polite"></div>
+
+    <!-- ============ KARTU FORM (bergaya struk) ============ -->
+    <main class="receipt-card rounded-sm shadow-[0_1px_2px_rgba(20,35,29,0.06),0_8px_24px_-8px_rgba(20,35,29,0.15)] px-6 pt-8 pb-7">
+
+      <div class="text-center mb-5">
+        <p class="font-display uppercase tracking-[0.2em] text-xs text-muted">Catatan Belanja</p>
+        <p id="printedTimestamp" class="text-[11px] text-muted mt-1 font-mono"></p>
+      </div>
+
+      <div class="dashed-divider mb-5"></div>
+
+      <form id="expenseForm" novalidate>
+
+        <!-- Tanggal -->
+        <div class="mb-4">
+          <label for="tanggal" class="block text-sm font-medium mb-1.5">Tanggal</label>
+          <input
+            type="date"
+            id="tanggal"
+            name="tanggal"
+            required
+            class="w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent transition"
+          >
+        </div>
+
+        <!-- Kategori -->
+        <div class="mb-4">
+          <label for="kategori" class="block text-sm font-medium mb-1.5">Kategori</label>
+          <select
+            id="kategori"
+            name="kategori"
+            required
+            class="w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent transition"
+          >
+            <option value="Makanan & Minuman">Makanan & Minuman</option>
+            <option value="Transportasi">Transportasi</option>
+            <option value="Belanja Rumah Tangga">Belanja Rumah Tangga</option>
+            <option value="Tagihan & Utilitas">Tagihan & Utilitas</option>
+            <option value="Kesehatan">Kesehatan</option>
+            <option value="Hiburan">Hiburan</option>
+            <option value="Pendidikan">Pendidikan</option>
+            <option value="Lainnya">Lainnya</option>
+          </select>
+        </div>
+
+        <!-- Nominal -->
+        <div class="mb-4">
+          <label for="nominal" class="block text-sm font-medium mb-1.5">Nominal (Rp)</label>
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-muted text-sm font-mono">Rp</span>
+            <input
+              type="number"
+              id="nominal"
+              name="nominal"
+              min="0"
+              step="1"
+              inputmode="numeric"
+              placeholder="0"
+              class="w-full rounded-lg border border-hairline bg-white pl-9 pr-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent transition"
+            >
+          </div>
+          <p class="text-xs text-muted mt-1">Boleh dikosongkan jika kamu mengunggah foto struk — nominal akan diisi otomatis oleh AI.</p>
+        </div>
+
+        <!-- Deskripsi + tombol Bicara -->
+        <div class="mb-4">
+          <div class="flex items-center justify-between mb-1.5">
+            <label for="deskripsi" class="block text-sm font-medium">Deskripsi</label>
+            <span id="micStatus" class="text-xs text-accent-dark font-medium"></span>
+          </div>
+          <div class="flex gap-2">
+            <textarea
+              id="deskripsi"
+              name="deskripsi"
+              rows="2"
+              placeholder="Contoh: makan siang bersama tim"
+              class="flex-1 w-full rounded-lg border border-hairline bg-white px-3 py-2.5 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-accent focus:border-accent transition"
+            ></textarea>
+            <button
+              type="button"
+              id="micBtn"
+              title="Isi deskripsi dengan suara"
+              aria-label="Bicara untuk mengisi deskripsi"
+              class="shrink-0 w-11 h-11 self-start rounded-lg border border-hairline bg-white flex items-center justify-center text-ink hover:bg-accent-soft hover:border-accent transition"
+            >
+              <!-- Ikon mikrofon (SVG inline, tanpa dependency) -->
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Upload Foto Struk -->
+        <div class="mb-6">
+          <label class="block text-sm font-medium mb-1.5">Foto Struk <span class="text-muted font-normal">(opsional)</span></label>
+
+          <label
+            for="fotoStruk"
+            id="dropZone"
+            class="flex items-center gap-3 rounded-lg border-2 border-dashed border-hairline bg-white/60 px-4 py-3.5 cursor-pointer hover:border-accent hover:bg-accent-soft transition"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 text-muted shrink-0">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+              <circle cx="12" cy="13" r="4"></circle>
+            </svg>
+            <span class="text-sm text-muted">Ketuk untuk memotret atau memilih foto struk</span>
+          </label>
+          <input
+            type="file"
+            id="fotoStruk"
+            name="fotoStruk"
+            accept="image/*"
+            capture="environment"
+            class="hidden"
+          >
+
+          <!-- Preview foto yang dipilih -->
+          <div id="previewWrap" class="hidden mt-3 flex items-center gap-3 rounded-lg border border-hairline bg-white p-2.5">
+            <img id="previewImg" src="" alt="Pratinjau struk" class="w-14 h-14 object-cover rounded-md border border-hairline">
+            <span id="previewName" class="text-xs text-muted flex-1 truncate"></span>
+            <button type="button" id="removeFotoBtn" class="text-xs font-medium text-warn hover:underline shrink-0">
+              Hapus
+            </button>
+          </div>
+        </div>
+
+        <div class="dashed-divider mb-5"></div>
+
+        <!-- Tombol Submit -->
+        <button
+          type="submit"
+          id="submitBtn"
+          class="w-full flex items-center justify-center gap-2 rounded-lg bg-accent hover:bg-accent-dark text-white font-medium text-sm py-3 transition disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          <span id="submitSpinner" class="spinner hidden"></span>
+          <span id="submitText">Simpan Catatan</span>
+        </button>
+
+      </form>
+    </main>
+
+    <p class="text-center text-xs text-muted mt-6">
+      Data tersimpan otomatis ke Google Sheets lewat n8n &amp; Gemini AI.
+    </p>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ============================================================
+  // KONFIGURASI — GANTI baris di bawah ini dengan Production URL
+  // Webhook n8n Anda sebelum meng-upload file ini ke GitHub Pages.
+  // Contoh: "https://n8n-anda.domain.com/webhook/catat-keuangan"
+  // ============================================================
+  const N8N_WEBHOOK_URL = "https://GANTI-DENGAN-DOMAIN-N8N-ANDA/webhook/catat-keuangan";
+
+  // ------------------------------------------------------------
+  // Referensi elemen
+  // ------------------------------------------------------------
+  const form = document.getElementById('expenseForm');
+  const tanggalInput = document.getElementById('tanggal');
+  const kategoriInput = document.getElementById('kategori');
+  const nominalInput = document.getElementById('nominal');
+  const deskripsiInput = document.getElementById('deskripsi');
+  const fotoInput = document.getElementById('fotoStruk');
+
+  const previewWrap = document.getElementById('previewWrap');
+  const previewImg = document.getElementById('previewImg');
+  const previewName = document.getElementById('previewName');
+  const removeFotoBtn = document.getElementById('removeFotoBtn');
+
+  const micBtn = document.getElementById('micBtn');
+  const micStatus = document.getElementById('micStatus');
+
+  const submitBtn = document.getElementById('submitBtn');
+  const submitText = document.getElementById('submitText');
+  const submitSpinner = document.getElementById('submitSpinner');
+
+  const alertBox = document.getElementById('alertBox');
+  const printedTimestamp = document.getElementById('printedTimestamp');
+
+  let alertTimeoutId = null;
+
+  // ------------------------------------------------------------
+  // Util: set tanggal hari ini sebagai default & jam cetak struk
+  // ------------------------------------------------------------
+  function setTodayAsDefaultDate() {
+    const today = new Date();
+    tanggalInput.value = today.toISOString().split('T')[0];
+    printedTimestamp.textContent = today.toLocaleString('id-ID', {
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    });
+  }
+  setTodayAsDefaultDate();
+
+  // ------------------------------------------------------------
+  // Alert / toast banner
+  // ------------------------------------------------------------
+  function showAlert(type, message) {
+    clearTimeout(alertTimeoutId);
+    alertBox.textContent = message;
+    alertBox.className = 'alert-box show ' + (type === 'success' ? 'alert-success' : 'alert-error');
+    alertTimeoutId = setTimeout(clearAlert, 6000);
+  }
+
+  function clearAlert() {
+    alertBox.className = 'alert-box';
+    alertBox.textContent = '';
+  }
+
+  // ------------------------------------------------------------
+  // Loading state pada tombol submit
+  // ------------------------------------------------------------
+  function setLoading(isLoading) {
+    submitBtn.disabled = isLoading;
+    submitSpinner.classList.toggle('hidden', !isLoading);
+    submitText.textContent = isLoading ? 'Mengirim ke server...' : 'Simpan Catatan';
+  }
+
+  // ------------------------------------------------------------
+  // Preview foto struk yang diunggah
+  // ------------------------------------------------------------
+  fotoInput.addEventListener('change', () => {
+    const file = fotoInput.files[0];
+    if (!file) {
+      clearImagePreview();
+      return;
+    }
+    const objectUrl = URL.createObjectURL(file);
+    previewImg.src = objectUrl;
+    previewName.textContent = file.name;
+    previewWrap.classList.remove('hidden');
+  });
+
+  removeFotoBtn.addEventListener('click', () => {
+    fotoInput.value = '';
+    clearImagePreview();
+  });
+
+  function clearImagePreview() {
+    previewWrap.classList.add('hidden');
+    previewImg.src = '';
+    previewName.textContent = '';
+  }
+
+  // ------------------------------------------------------------
+  // Konversi file gambar menjadi string Base64 murni
+  // (tanpa prefix "data:image/xxx;base64,")
+  // ------------------------------------------------------------
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result || '';
+        const base64 = String(result).split(',')[1] || '';
+        resolve(base64);
+      };
+      reader.onerror = () => reject(new Error('Gagal membaca file gambar.'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // ------------------------------------------------------------
+  // Web Speech API — tombol "Bicara" untuk mengisi deskripsi
+  // ------------------------------------------------------------
+  const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let recognition = null;
+  let isRecognizing = false;
+
+  if (SpeechRecognitionAPI) {
+    recognition = new SpeechRecognitionAPI();
+    recognition.lang = 'id-ID';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+      isRecognizing = true;
+      micBtn.classList.add('mic-active');
+      micStatus.textContent = 'Mendengarkan...';
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript.trim();
+      deskripsiInput.value = deskripsiInput.value
+        ? `${deskripsiInput.value} ${transcript}`
+        : transcript;
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === 'no-speech') {
+        showAlert('error', 'Tidak ada suara yang terdengar. Coba lagi.');
+      } else if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+        showAlert('error', 'Izin mikrofon ditolak. Aktifkan izin mikrofon di pengaturan browser.');
+      } else {
+        showAlert('error', 'Gagal mengenali suara (' + event.error + ').');
+      }
+    };
+
+    recognition.onend = () => {
+      isRecognizing = false;
+      micBtn.classList.remove('mic-active');
+      micStatus.textContent = '';
+    };
+
+    micBtn.addEventListener('click', () => {
+      if (isRecognizing) {
+        recognition.stop();
+      } else {
+        try {
+          recognition.start();
+        } catch (err) {
+          // Menangani kasus start() dipanggil dua kali beruntun
+          console.warn('SpeechRecognition start error:', err);
+        }
+      }
+    });
+  } else {
+    micBtn.disabled = true;
+    micBtn.classList.add('opacity-40', 'cursor-not-allowed');
+    micBtn.title = 'Browser ini tidak mendukung input suara';
+  }
+
+  // ------------------------------------------------------------
+  // Submit form -> kirim ke Webhook n8n
+  // ------------------------------------------------------------
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearAlert();
+
+    const tanggal = tanggalInput.value;
+    const kategori = kategoriInput.value;
+    const nominalRaw = nominalInput.value;
+    const deskripsi = deskripsiInput.value.trim();
+    const file = fotoInput.files[0] || null;
+
+    if (!tanggal) {
+      showAlert('error', 'Tanggal wajib diisi.');
+      return;
+    }
+
+    if (!nominalRaw && !file) {
+      showAlert('error', 'Isi Nominal secara manual, atau unggah foto struk agar AI bisa membacanya.');
+      return;
+    }
+
+    if (N8N_WEBHOOK_URL.includes('https://autopagi.app.n8n.cloud/webhook/catat-keuangan')) {
+      showAlert('error', 'URL Webhook n8n belum diatur. Edit konstanta N8N_WEBHOOK_URL di file index.html.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      let imageBase64 = null;
+      let imageMimeType = null;
+
+      if (file) {
+        imageMimeType = file.type || 'image/jpeg';
+        imageBase64 = await fileToBase64(file);
+      }
+
+      const payload = {
+        tanggal: tanggal,
+        kategori: kategori,
+        nominal: nominalRaw !== '' ? Number(nominalRaw) : null,
+        deskripsi: deskripsi,
+        image_base64: imageBase64,
+        image_mime_type: imageMimeType
+      };
+
+      const response = await fetch(N8N_WEBHOOK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error('Server merespons dengan status ' + response.status);
+      }
+
+      // Respons dari n8n tidak wajib berupa JSON, jadi ditangani dengan aman
+      await response.json().catch(() => ({}));
+
+      showAlert('success', 'Catatan berhasil disimpan ke Google Sheets.');
+      form.reset();
+      setTodayAsDefaultDate();
+      clearImagePreview();
+
+    } catch (err) {
+      console.error('Gagal mengirim data:', err);
+      showAlert('error', 'Gagal mengirim data. Periksa koneksi internet, URL Webhook, atau pengaturan CORS di n8n.');
+    } finally {
+      setLoading(false);
+    }
+  });
+
+})();
+</script>
+
+</body>
+</html>
